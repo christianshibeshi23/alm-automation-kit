@@ -1,0 +1,462 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_visualstudioteamservices": {
+        "api": {
+          "name": "shared_visualstudioteamservices"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "dyna_sharedvisualstudioteamservices_0874f"
+        },
+        "runtimeSource": "embedded"
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        },
+        "ALM_DevOps_ProjectName (dyna_almdevopsprojectname)": {
+          "defaultValue": "Automate ALM Accelerator",
+          "type": "String",
+          "metadata": {
+            "schemaName": "dyna_almdevopsprojectname",
+            "description": "Name of the DevOps Project link to ALM"
+          }
+        },
+        "ALM_DevOps_OrganizationName (dyna_almdevopsorganizationname)": {
+          "defaultValue": "aurelienclere",
+          "type": "String",
+          "metadata": {
+            "schemaName": "dyna_almdevopsorganizationname",
+            "description": "Name of DevOps Organization"
+          }
+        },
+        "ALM_DevOps_RepositoryID (dyna_almdevopsrepositoryid)": {
+          "defaultValue": "f7b491b9-5c31-40b1-8741-c3b7c5f08507",
+          "type": "String",
+          "metadata": {
+            "schemaName": "dyna_almdevopsrepositoryid",
+            "description": "Id (GIT) of the DevOps Repo - You can setup after with the Flow 0 SetupConfig"
+          }
+        },
+        "ALM_BuildId_ExportGit (dyna_almbuildidexportgit)": {
+          "defaultValue": "4",
+          "type": "String",
+          "metadata": {
+            "schemaName": "dyna_almbuildidexportgit",
+            "description": "Pipeline Id of DevOps to Export Solution."
+          }
+        },
+        "ALM_DevOps_APIVersion (dyna_ALMDevOpsAPIVersion)": {
+          "defaultValue": "7.2",
+          "type": "String",
+          "metadata": {
+            "schemaName": "dyna_ALMDevOpsAPIVersion",
+            "description": "Version of DevOps API (7.2 suggested)"
+          }
+        }
+      },
+      "triggers": {
+        "When_a_build_completes": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "account": "@parameters('ALM_DevOps_OrganizationName (dyna_almdevopsorganizationname)')",
+              "project": "@parameters('ALM_DevOps_ProjectName (dyna_almdevopsprojectname)')",
+              "resultFilter": "partiallySucceeded",
+              "definitions": "@int(parameters('ALM_BuildId_ExportGit (dyna_almbuildidexportgit)'))"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices",
+              "operationId": "OnBuildCompleted",
+              "connectionName": "shared_visualstudioteamservices"
+            }
+          },
+          "recurrence": {
+            "frequency": "Minute",
+            "interval": 1
+          },
+          "splitOn": "@triggerOutputs()?['body/value']",
+          "metadata": {
+            "operationMetadataId": "bd7cdd70-906c-4f70-9896-4e06f2df73e5"
+          }
+        }
+      },
+      "actions": {
+        "buildId": {
+          "type": "Compose",
+          "inputs": "@triggerOutputs()?['body/id']",
+          "runAfter": {
+            "repoId": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "14bc6f11-a32c-42be-a7c0-aff9dafba8e5"
+          }
+        },
+        "branchName": {
+          "type": "Compose",
+          "inputs": "@concat(split(triggerOutputs()?['body/buildNumber'],'-')[1],'_',formatDateTime(utcNow(),'ddMMyy'))",
+          "runAfter": {
+            "buildId": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "77e07489-6026-42e3-a112-a8be886cb744"
+          }
+        },
+        "Delete_the_old_build": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "account": "@parameters('ALM_DevOps_OrganizationName (dyna_almdevopsorganizationname)')",
+              "parameters/Method": "DELETE",
+              "parameters/Uri": "@{outputs('ProjetName')}/_apis/build/builds/@{outputs('buildId')}?api-version=@{parameters('ALM_DevOps_APIVersion (dyna_ALMDevOpsAPIVersion)')}"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices",
+              "operationId": "HttpRequest",
+              "connectionName": "shared_visualstudioteamservices"
+            }
+          },
+          "runAfter": {
+            "Apply_to_each_Lease": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "143371ea-f600-4bc2-ae85-4d2a4f91c092"
+          }
+        },
+        "ProjetName": {
+          "type": "Compose",
+          "inputs": "@parameters('ALM_DevOps_ProjectName (dyna_almdevopsprojectname)')",
+          "runAfter": {
+            "branchName": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "40ff803a-aea5-4edf-aa40-e720609a3949"
+          }
+        },
+        "Get_leases": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "account": "@parameters('ALM_DevOps_OrganizationName (dyna_almdevopsorganizationname)')",
+              "parameters/Method": "GET",
+              "parameters/Uri": "@{outputs('ProjetName')}/_apis/build/retention/leases?definitionId=@{triggerOutputs()?['body/definition/id']}&runId=@{outputs('buildId')}&api-version=@{parameters('ALM_DevOps_APIVersion (dyna_ALMDevOpsAPIVersion)')}"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices",
+              "operationId": "HttpRequest",
+              "connectionName": "shared_visualstudioteamservices"
+            }
+          },
+          "runAfter": {
+            "ProjetName": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "bc9c592c-4ee5-4de9-a852-1b5e501773f3"
+          }
+        },
+        "Parse_JSON": {
+          "type": "ParseJson",
+          "inputs": {
+            "content": "@body('Get_leases')",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer"
+                },
+                "value": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "leaseId": {
+                        "type": "integer"
+                      },
+                      "ownerId": {
+                        "type": "string"
+                      },
+                      "runId": {
+                        "type": "integer"
+                      },
+                      "definitionId": {
+                        "type": "integer"
+                      },
+                      "createdOn": {
+                        "type": "string"
+                      },
+                      "validUntil": {
+                        "type": "string"
+                      },
+                      "protectPipeline": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "leaseId",
+                      "ownerId",
+                      "runId",
+                      "definitionId",
+                      "createdOn",
+                      "validUntil",
+                      "protectPipeline"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "runAfter": {
+            "Get_leases": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "6d6433fa-e282-4eb5-bfad-4dbd19845241"
+          }
+        },
+        "Apply_to_each_Lease": {
+          "type": "Foreach",
+          "foreach": "@body('Parse_JSON')?['value']",
+          "actions": {
+            "Delete_lease_on_the_build": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "account": "@parameters('ALM_DevOps_OrganizationName (dyna_almdevopsorganizationname)')",
+                  "parameters/Method": "DELETE",
+                  "parameters/Uri": "@{outputs('ProjetName')}/_apis/build/retention/leases?ids=@{items('Apply_to_each_Lease')?['leaseId']}&api-version=@{parameters('ALM_DevOps_APIVersion (dyna_ALMDevOpsAPIVersion)')}"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices",
+                  "operationId": "HttpRequest",
+                  "connectionName": "shared_visualstudioteamservices"
+                }
+              },
+              "metadata": {
+                "operationMetadataId": "1aa3d56b-9861-4144-81f1-2f39417a18b1"
+              }
+            }
+          },
+          "runAfter": {
+            "Parse_JSON": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "fe7474a9-29c8-4d84-8a83-5b44cce263c6"
+          }
+        },
+        "List_All_Branches": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "account": "@parameters('ALM_DevOps_OrganizationName (dyna_almdevopsorganizationname)')",
+              "parameters/Method": "GET",
+              "parameters/Uri": "@{outputs('ProjetName')}/_apis/git/repositories/@{variables('repoId')}/refs?api-version=@{parameters('ALM_DevOps_APIVersion (dyna_ALMDevOpsAPIVersion)')}"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices",
+              "operationId": "HttpRequest",
+              "connectionName": "shared_visualstudioteamservices"
+            }
+          },
+          "runAfter": {
+            "Delete_the_old_build": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "8fcdfff9-f90b-4e69-a3f1-4696d916c714"
+          }
+        },
+        "repoId": {
+          "type": "InitializeVariable",
+          "inputs": {
+            "variables": [
+              {
+                "name": "repoId",
+                "type": "string",
+                "value": "@parameters('ALM_DevOps_RepositoryID (dyna_almdevopsrepositoryid)')"
+              }
+            ]
+          },
+          "runAfter": {},
+          "metadata": {
+            "operationMetadataId": "880e799f-89c9-4a64-b19e-76a886e0f9fa"
+          }
+        },
+        "Parse_JSON_2": {
+          "type": "ParseJson",
+          "inputs": {
+            "content": "@body('List_All_Branches')",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "creator": {
+                        "type": "object",
+                        "properties": {
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "_links": {
+                            "type": "object",
+                            "properties": {
+                              "avatar": {
+                                "type": "object",
+                                "properties": {
+                                  "href": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "uniqueName": {
+                            "type": "string"
+                          },
+                          "imageUrl": {
+                            "type": "string"
+                          },
+                          "descriptor": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "objectId",
+                      "creator",
+                      "url"
+                    ]
+                  }
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "runAfter": {
+            "List_All_Branches": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "8165ccb9-2827-4a81-a6d9-088363879b34"
+          }
+        },
+        "Apply_to_each": {
+          "type": "Foreach",
+          "foreach": "@body('Parse_JSON_2')?['value']",
+          "actions": {
+            "Condition": {
+              "type": "If",
+              "expression": {
+                "contains": [
+                  "@items('Apply_to_each')?['name']",
+                  "@outputs('branchName')"
+                ]
+              },
+              "actions": {
+                "bodyBranchDelete": {
+                  "type": "Compose",
+                  "inputs": [
+                    {
+                      "name": "@{items('Apply_to_each')?['name']}",
+                      "oldObjectId": "0000000000000000000000000000000000000000",
+                      "newObjectId": "0000000000000000000000000000000000000000"
+                    }
+                  ],
+                  "metadata": {
+                    "operationMetadataId": "3d3d117d-bd18-4e6f-8919-2562fdfbd2ef"
+                  }
+                },
+                "Send_an_HTTP_request_to_Azure_DevOps": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "account": "@parameters('ALM_DevOps_OrganizationName (dyna_almdevopsorganizationname)')",
+                      "parameters/Method": "POST",
+                      "parameters/Uri": "@{outputs('ProjetName')}/_apis/git/repositories/@{variables('repoId')}/refs?api-version=@{parameters('ALM_DevOps_APIVersion (dyna_ALMDevOpsAPIVersion)')}",
+                      "parameters/Body": "@outputs('bodyBranchDelete')"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices",
+                      "operationId": "HttpRequest",
+                      "connectionName": "shared_visualstudioteamservices"
+                    }
+                  },
+                  "runAfter": {
+                    "bodyBranchDelete": [
+                      "Succeeded"
+                    ]
+                  },
+                  "metadata": {
+                    "operationMetadataId": "3ae8f585-cdcc-44b4-9bea-f85410678a1c"
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "metadata": {
+                "operationMetadataId": "fd68a86c-8de2-44b0-82c2-577a1c099418"
+              }
+            }
+          },
+          "runAfter": {
+            "Parse_JSON_2": [
+              "Succeeded"
+            ]
+          },
+          "metadata": {
+            "operationMetadataId": "da88a286-0b01-418a-a4f4-21c52e6c6075"
+          }
+        }
+      },
+      "description": "This flow is made here to clean up Build in Partially Succeeded : meaning especially on the build id export solution git, where there is no change at all to deploy. We also clean the temp branch and associated PR if any"
+    },
+    "templateName": null
+  },
+  "schemaVersion": "1.0.0.0"
+}
